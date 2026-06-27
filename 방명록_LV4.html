@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방명록 LV4</title>
+<style>
+  body { font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+         max-width: 820px; margin: 0 auto; padding: 24px 18px; color: #222; line-height: 1.6; }
+  h1 { font-size: 24px; }
+  h2 { font-size: 18px; margin-top: 36px; border-bottom: 2px solid #2f9e6e; padding-bottom: 6px; }
+  .intro { background: #f5f7f6; border-radius: 10px; padding: 14px 18px; font-size: 14px; }
+  .intro b { color: #2f9e6e; }
+  .new { background: #fff7e6; border-left: 4px solid #f0a500; border-radius: 6px;
+         padding: 12px 16px; font-size: 14px; margin: 14px 0; }
+  .safe { background: #eef7ff; border-left: 4px solid #4a90d9; border-radius: 6px;
+          padding: 12px 16px; font-size: 14px; margin: 14px 0; }
+  .steps { background:#fafafa; border:1px solid #eee; border-radius:8px; padding:10px 18px; font-size:14px; }
+  .hint { font-size: 13px; color: #666; margin: 6px 0 10px; }
+  .code-wrap { position: relative; }
+  pre { background: #1e1e1e; color: #e6e6e6; border-radius: 10px; padding: 16px;
+        overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 0; }
+  code { font-family: Consolas, 'D2Coding', Menlo, monospace; white-space: pre; }
+  .copy-btn { position: absolute; top: 10px; right: 10px; background: #2f9e6e; color: #fff;
+              border: none; border-radius: 7px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+  .copy-btn:active { background: #247a55; }
+  .copy-btn.done { background: #555; }
+  table.head { border-collapse: collapse; margin: 4px 0 8px; }
+  table.head td { border: 1px solid #bbb; padding: 6px 18px; text-align: center; font-weight: bold; background:#f5f7f6; }
+  kbd { background:#eee; border:1px solid #ccc; border-radius:4px; padding:1px 6px; font-size:13px; }
+</style>
+</head>
+<body>
+
+<h1>🤖 방명록 LV4 — AI 환영 코멘트</h1>
+<div class="intro">
+  방명록에 글이 올라오면 <b>AI가 자동으로 환영 코멘트</b>를 달아주는 버전입니다.
+  모델은 <b>gemini-2.5-flash-lite</b> (구글 AI 스튜디오), API 키는 <b>스크립트 속성</b>에 저장합니다.
+</div>
+
+<div class="new">
+  <b>이번 버전에 추가된 것</b><br>
+  ① 시트에 <b>E열(환영코멘트)</b> 추가<br>
+  ② 글 저장 시 <b>Gemma API 호출</b>로 환영 코멘트 생성 → E열에 저장 (Code.gs)<br>
+  ③ 각 글 아래 <b>🤖 AI 코멘트</b> 표시 (index.html)<br>
+  ④ AI 호출이 실패해도 <b>방명록 글은 정상 저장</b> (데이터를 잃지 않음)
+</div>
+
+<div class="safe">
+  <b>🔐 이번 단계의 핵심 — 안전한 AI 사용</b><br>
+  API 키를 코드나 화면(index.html)에 <b>절대 적지 않습니다.</b> 키는 서버(스크립트 속성)에만 두고,
+  AI 호출도 서버(Code.gs)에서만 합니다. 그래서 교육생이 F12로 들여다봐도 <b>키가 보이지 않습니다.</b><br>
+  또한 AI에 보내는 것은 <b>방명록의 이름·메시지</b>입니다. "무엇을 AI에 보내는가"를 늘 의식하세요.
+</div>
+
+<h2>1. API 키 발급 (구글 AI 스튜디오)</h2>
+<div class="steps">
+  ① <b>aistudio.google.com</b> 접속 → 로그인<br>
+  ② 왼쪽 <b>Get API key</b> → <b>Create API key</b><br>
+  ③ 생성된 키를 복사 (이 키는 비밀번호처럼 다룰 것)
+</div>
+
+<h2>2. 키를 스크립트 속성에 저장</h2>
+<div class="steps">
+  Apps Script 에디터 → 왼쪽 <b>프로젝트 설정(톱니바퀴 ⚙️)</b> → 맨 아래 <b>스크립트 속성</b><br>
+  → <b>속성 추가</b> → 이름: <b>GEMINI_API_KEY</b> / 값: <b>(복사한 키 붙여넣기)</b> → <b>저장</b>
+</div>
+<p class="hint">※ 이름은 반드시 <kbd>GEMINI_API_KEY</kbd> (Code.gs가 이 이름으로 키를 찾습니다.)</p>
+
+<h2>3. 구글시트 제목행 (1행)</h2>
+<p class="hint">시트 탭 이름 <b>방명록</b>. 기존 A~D에 <b>E열(환영코멘트)</b>이 추가됐습니다.</p>
+<table class="head"><tr><td>시간</td><td>이름</td><td>메시지</td><td>좋아요</td><td>환영코멘트</td></tr></table>
+<div class="code-wrap">
+  <button class="copy-btn" onclick="copyText(this)">복사</button>
+  <pre><code id="head">시간	이름	메시지	좋아요	환영코멘트</code></pre>
+</div>
+
+<h2>4. Code.gs (서버 코드)</h2>
+<p class="hint">AI 호출 + 키 읽기가 들어간 버전. <b>testWelcome</b> 함수를 에디터에서 실행하면 키·모델이 잘 되는지 미리 확인할 수 있습니다.</p>
+<div class="code-wrap">
+  <button class="copy-btn" onclick="copyText(this)">복사</button>
+  <pre><code id="codegs">// ===== 구글시트 방명록 - Code.gs (서버 코드) =====
+// 구글시트를 데이터베이스로 사용하는 방명록 웹앱
+
+// 시트(탭) 이름 — 구글시트 아래쪽 탭 이름과 반드시 똑같이!
+const SHEET_NAME = &#x27;방명록&#x27;;
+
+// 사용할 AI 모델 (구글 AI 스튜디오 / Generative Language API)
+const AI_MODEL = &#x27;gemini-2.5-flash-lite&#x27;;
+
+// 스크립트 속성에서 API 키를 꺼냄 (코드·화면에 키를 직접 안 적음!)
+function getApiKey_() {
+  const key = PropertiesService.getScriptProperties().getProperty(&#x27;GEMINI_API_KEY&#x27;);
+  if (!key) {
+    throw new Error(&#x27;스크립트 속성에 GEMINI_API_KEY가 없습니다. 프로젝트 설정 → 스크립트 속성에서 추가하세요.&#x27;);
+  }
+  return key;
+}
+
+// [AI] 방명록 글에 다는 환영 코멘트 생성 (실패해도 빈 문자열 반환 → 방명록은 살림)
+function generateWelcome_(name, message) {
+  try {
+    const url = &#x27;https://generativelanguage.googleapis.com/v1beta/models/&#x27;
+      + AI_MODEL + &#x27;:generateContent?key=&#x27; + getApiKey_();
+
+    // 경량 모델이 &#x27;번역·요약&#x27;으로 새지 않도록 예시(few-shot)로 패턴을 박아줌
+    const prompt =
+      &#x27;너는 방명록에 한국어 환영 인사를 다는 역할이야. 아래 예시처럼, 마지막 &quot;환영 인사:&quot; 뒤에 &#x27; +
+      &#x27;한국어 한 문장만 써. 번역·설명·영어 금지. 이모지는 한 개까지.\n\n&#x27; +
+      &#x27;메시지: 처음 와봤어요\n&#x27; +
+      &#x27;환영 인사: 처음 오셨군요, 진심으로 환영합니다! 😊\n\n&#x27; +
+      &#x27;메시지: 잘 보고 갑니다\n&#x27; +
+      &#x27;환영 인사: 들러주셔서 정말 고마워요, 또 놀러 오세요!\n\n&#x27; +
+      &#x27;메시지: 화이팅입니다\n&#x27; +
+      &#x27;환영 인사: 따뜻한 응원 감사해요, 덕분에 힘이 나네요!\n\n&#x27; +
+      &#x27;메시지: &#x27; + message + &#x27;\n&#x27; +
+      &#x27;환영 인사:&#x27;;
+
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.9, maxOutputTokens: 200, stopSequences: [&#x27;메시지:&#x27;] }
+    };
+
+    const res = UrlFetchApp.fetch(url, {
+      method: &#x27;post&#x27;,
+      contentType: &#x27;application/json&#x27;,
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true // 에러여도 예외 안 던지고 응답을 받음
+    });
+
+    if (res.getResponseCode() !== 200) {
+      console.error(&#x27;AI 호출 실패: &#x27; + res.getResponseCode() + &#x27; &#x27; + res.getContentText());
+      return &#x27;&#x27;; // 실패 시 코멘트 없이 진행
+    }
+
+    const data = JSON.parse(res.getContentText());
+    let text = data.candidates[0].content.parts[0].text.trim();
+    // 모델이 앞에 &#x27;환영 인사:&#x27; 같은 라벨이나 따옴표·별표를 붙이면 제거
+    text = text.replace(/^환영\s*인사\s*[:：]?\s*/i, &#x27;&#x27;)
+               .replace(/^[*&quot;&#x27;\s]+|[*&quot;&#x27;\s]+$/g, &#x27;&#x27;)
+               .split(&#x27;\n&#x27;)[0]; // 첫 줄만 사용
+    return text;
+  } catch (e) {
+    console.error(&#x27;AI 코멘트 생성 중 오류: &#x27; + e.message);
+    return &#x27;&#x27;; // 어떤 오류든 방명록 저장은 막지 않음
+  }
+}
+
+// (선택) 에디터에서 직접 실행해 키·모델이 잘 작동하는지 확인하는 테스트
+function testWelcome() {
+  Logger.log(generateWelcome_(&#x27;홍길동&#x27;, &#x27;안녕하세요, 잘 부탁드립니다!&#x27;));
+}
+
+// 웹앱 주소로 접속하면 index.html 화면을 보여줌
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile(&#x27;index&#x27;)
+    .setTitle(&#x27;우리 반 방명록&#x27;)
+    .addMetaTag(&#x27;viewport&#x27;, &#x27;width=device-width, initial-scale=1&#x27;);
+}
+
+// [저장] 방명록에 글 한 줄 추가하기 (+ AI 환영 코멘트)
+function addEntry(name, message) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const welcome = generateWelcome_(name, message); // AI가 환영 코멘트 생성
+  sheet.appendRow([new Date(), name, message, 0, welcome]); // [시간,이름,메시지,좋아요,환영코멘트]
+  return getEntries(); // 저장 후 최신 목록을 돌려줌
+}
+
+// [읽기] 방명록 글 전부 가져오기 (최신 글이 위로)
+function getEntries() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const lastRow = sheet.getLastRow();
+  if (lastRow &lt; 2) return []; // 헤더(1행)만 있으면 빈 목록
+
+  const values = sheet.getRange(2, 1, lastRow - 1, 5).getValues(); // A~E열(5칸)
+  const entries = values.map(function (row, i) {
+    return {
+      rowNum: i + 2, // 실제 시트 행 번호 (좋아요 누를 때 이 줄을 찾음)
+      time: Utilities.formatDate(new Date(row[0]), &#x27;GMT+9&#x27;, &#x27;yyyy-MM-dd HH:mm&#x27;),
+      name: row[1],
+      message: row[2],
+      likes: row[3] || 0, // 좋아요 수 (빈 칸이면 0)
+      welcome: row[4] || &#x27;&#x27; // AI 환영 코멘트 (없으면 빈 문자열)
+    };
+  });
+  return entries.reverse(); // 최신 글이 맨 위로
+}
+
+// [좋아요] 특정 줄의 좋아요를 1 올리기 (동시 클릭 안전 - 락 적용)
+function likeEntry(rowNum) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000); // 한 번에 한 명만 들어오게, 최대 10초 대기
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    const cell = sheet.getRange(rowNum, 4); // 그 줄의 D열(좋아요)
+    const current = cell.getValue() || 0;
+    cell.setValue(current + 1);
+    SpreadsheetApp.flush(); // 시트에 즉시 반영
+    return getEntries(); // 올린 뒤 최신 목록을 돌려줌
+  } finally {
+    lock.releaseLock(); // 끝나면 반드시 락 풀기
+  }
+}
+</code></pre>
+</div>
+
+<h2>5. index.html (화면)</h2>
+<p class="hint">각 글 아래 🤖 AI 코멘트가 표시됩니다.</p>
+<div class="code-wrap">
+  <button class="copy-btn" onclick="copyText(this)">복사</button>
+  <pre><code id="indexhtml">&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+  &lt;base target=&quot;_top&quot;&gt;
+  &lt;meta charset=&quot;utf-8&quot;&gt;
+  &lt;style&gt;
+    body {
+      font-family: -apple-system, &#x27;Apple SD Gothic Neo&#x27;, &#x27;Malgun Gothic&#x27;, sans-serif;
+      max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f7; color: #222;
+    }
+    h1 { font-size: 22px; }
+    .form-box { background: #fff; padding: 16px; border-radius: 12px; margin-bottom: 20px; }
+    input, textarea {
+      width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 8px;
+      border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit;
+    }
+    textarea { resize: vertical; max-width: 100%; }
+    button {
+      background: #2f9e6e; color: #fff; border: none; padding: 10px 20px;
+      border-radius: 8px; font-size: 14px; cursor: pointer;
+    }
+    button:disabled { background: #aaa; cursor: default; }
+    .entry { background: #fff; padding: 12px 16px; border-radius: 12px; margin-bottom: 10px; }
+    .entry .meta { font-size: 12px; color: #888; margin-bottom: 4px; }
+    .entry .msg { font-size: 15px; white-space: pre-wrap; }
+    .welcome { margin-top: 8px; background: #f0f7ff; border-left: 3px solid #4a90d9;
+               border-radius: 6px; padding: 8px 12px; font-size: 14px; color: #2c5a8a; }
+    .like-btn { margin-top: 8px; background: #fff; border: 1px solid #e0a; color: #c07;
+                border-radius: 20px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+    .like-btn:active { background: #fce; }
+    #status { color: #888; font-size: 13px; }
+    .poll-btn { margin: 0 0 12px; background: #eef; border: 1px solid #ccd; color: #335;
+                border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  &lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;h1&gt;📖 우리 반 방명록&lt;/h1&gt;
+  &lt;button id=&quot;pollBtn&quot; class=&quot;poll-btn&quot; onclick=&quot;togglePolling()&quot;&gt;자동 새로고침: 켜짐&lt;/button&gt;
+
+  &lt;div class=&quot;form-box&quot;&gt;
+    &lt;input type=&quot;text&quot; id=&quot;name&quot; placeholder=&quot;이름&quot; maxlength=&quot;20&quot;&gt;
+    &lt;textarea id=&quot;message&quot; placeholder=&quot;메시지를 남겨주세요&quot; rows=&quot;3&quot; maxlength=&quot;200&quot;&gt;&lt;/textarea&gt;
+    &lt;button id=&quot;submitBtn&quot; onclick=&quot;submitEntry()&quot;&gt;남기기&lt;/button&gt;
+  &lt;/div&gt;
+
+  &lt;p id=&quot;status&quot;&gt;불러오는 중...&lt;/p&gt;
+  &lt;div id=&quot;list&quot;&gt;&lt;/div&gt;
+
+  &lt;script&gt;
+    var pollTimer = null; // 자동 새로고침 타이머 (켜져 있으면 값이 들어감)
+
+    // 목록을 서버에서 받아와 화면을 갱신 (재사용)
+    function loadEntries() {
+      google.script.run
+        .withSuccessHandler(showEntries)
+        .withFailureHandler(function (err) {
+          document.getElementById(&#x27;status&#x27;).textContent = &#x27;불러오기 실패: &#x27; + err.message;
+        })
+        .getEntries();
+    }
+
+    // 자동 새로고침(폴링) 켜기/끄기
+    function togglePolling() {
+      const btn = document.getElementById(&#x27;pollBtn&#x27;);
+      if (pollTimer) {
+        clearInterval(pollTimer); // 끄기
+        pollTimer = null;
+        btn.textContent = &#x27;자동 새로고침: 꺼짐&#x27;;
+      } else {
+        pollTimer = setInterval(loadEntries, 5000); // 켜기 (5초마다)
+        btn.textContent = &#x27;자동 새로고침: 켜짐&#x27;;
+      }
+    }
+
+    // 페이지가 열리면 한 번 불러오고, 자동 새로고침은 켠 상태로 시작
+    window.onload = function () {
+      loadEntries();
+      pollTimer = setInterval(loadEntries, 5000); // 5초마다 → 남이 쓴 글/좋아요도 자동 반영
+    };
+
+    // [남기기] 버튼을 누르면 실행
+    function submitEntry() {
+      const name = document.getElementById(&#x27;name&#x27;).value.trim();
+      const message = document.getElementById(&#x27;message&#x27;).value.trim();
+      if (!name || !message) {
+        alert(&#x27;이름과 메시지를 모두 입력해주세요.&#x27;);
+        return;
+      }
+
+      const btn = document.getElementById(&#x27;submitBtn&#x27;);
+      btn.disabled = true;
+      btn.textContent = &#x27;저장 중...&#x27;;
+
+      // 서버(Code.gs)의 addEntry 함수를 호출 → 끝나면 목록 새로고침
+      google.script.run
+        .withSuccessHandler(function (entries) {
+          document.getElementById(&#x27;message&#x27;).value = &#x27;&#x27;;
+          showEntries(entries);
+          btn.disabled = false;
+          btn.textContent = &#x27;남기기&#x27;;
+        })
+        .withFailureHandler(function (err) {
+          alert(&#x27;저장 실패: &#x27; + err.message);
+          btn.disabled = false;
+          btn.textContent = &#x27;남기기&#x27;;
+        })
+        .addEntry(name, message);
+    }
+
+    // 받아온 목록을 화면에 그리기
+    function showEntries(entries) {
+      const status = document.getElementById(&#x27;status&#x27;);
+      const list = document.getElementById(&#x27;list&#x27;);
+
+      if (!entries || entries.length === 0) {
+        status.textContent = &#x27;아직 글이 없어요. 첫 글을 남겨보세요!&#x27;;
+        list.innerHTML = &#x27;&#x27;;
+        return;
+      }
+
+      status.textContent = &#x27;총 &#x27; + entries.length + &#x27;개의 글&#x27;;
+      list.innerHTML = entries.map(function (e) {
+        // AI 환영 코멘트가 있으면 메시지 아래에 표시
+        var welcomeHtml = e.welcome
+          ? &#x27;&lt;div class=&quot;welcome&quot;&gt;🤖 &#x27; + escapeHtml(e.welcome) + &#x27;&lt;/div&gt;&#x27;
+          : &#x27;&#x27;;
+        return &#x27;&lt;div class=&quot;entry&quot;&gt;&#x27; +
+                 &#x27;&lt;div class=&quot;meta&quot;&gt;&#x27; + escapeHtml(e.name) + &#x27; · &#x27; + e.time + &#x27;&lt;/div&gt;&#x27; +
+                 &#x27;&lt;div class=&quot;msg&quot;&gt;&#x27; + escapeHtml(e.message) + &#x27;&lt;/div&gt;&#x27; +
+                 welcomeHtml +
+                 &#x27;&lt;button class=&quot;like-btn&quot; onclick=&quot;likePost(&#x27; + e.rowNum + &#x27;)&quot;&gt;❤️ &#x27; + e.likes + &#x27;&lt;/button&gt;&#x27; +
+               &#x27;&lt;/div&gt;&#x27;;
+      }).join(&#x27;&#x27;);
+    }
+
+    // 하트 버튼을 누르면 그 글의 좋아요를 1 올림
+    function likePost(rowNum) {
+      google.script.run
+        .withSuccessHandler(showEntries)
+        .withFailureHandler(function (err) { alert(&#x27;좋아요 실패: &#x27; + err.message); })
+        .likeEntry(rowNum);
+    }
+
+    // 입력값의 특수문자를 안전하게 표시 (화면 깨짐·악용 방지)
+    function escapeHtml(text) {
+      const div = document.createElement(&#x27;div&#x27;);
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+</div>
+
+<p class="hint" style="margin-top:28px">⚠️ 코드 수정 후에는 반드시 <b>배포 → 배포 관리 → 편집(연필) → 버전: 새 버전 → 배포</b>.</p>
+
+<script>
+function copyText(btn) {
+  var codeEl = btn.parentElement.querySelector('code');
+  var text = codeEl.textContent;
+  function done() {
+    var orig = btn.textContent;
+    btn.textContent = '복사됨 ✓';
+    btn.classList.add('done');
+    setTimeout(function(){ btn.textContent = orig; btn.classList.remove('done'); }, 1500);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function(){ fallback(text, done); });
+  } else {
+    fallback(text, done);
+  }
+}
+function fallback(text, done) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch(e) { alert('복사 실패: 코드를 직접 선택해 복사해주세요.'); }
+  document.body.removeChild(ta);
+}
+</script>
+
+</body>
+</html>
