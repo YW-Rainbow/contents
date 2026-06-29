@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>방명록 LV4</title>
+<title>방명록 LV4 (AI 환영 코멘트) - 복사용</title>
 <style>
   body { font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
          max-width: 820px; margin: 0 auto; padding: 24px 18px; color: #222; line-height: 1.6; }
@@ -149,6 +149,18 @@ function generateWelcome_(name, message) {
 // (선택) 에디터에서 직접 실행해 키·모델이 잘 작동하는지 확인하는 테스트
 function testWelcome() {
   Logger.log(generateWelcome_(&#x27;홍길동&#x27;, &#x27;안녕하세요, 잘 부탁드립니다!&#x27;));
+}
+
+// [권한 점검] 외부 호출 등 권한이 충분한지 확인하고, 부족하면 재승인 URL을 알려줌
+// 사용법: 에디터에서 이 함수를 실행한 뒤 실행 로그를 확인 → 안내대로 처리
+function checkAuth() {
+  const info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+  if (info.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED) {
+    Logger.log(&#x27;⚠️ 권한이 부족합니다. 아래 주소를 열어 다시 승인하세요:&#x27;);
+    Logger.log(info.getAuthorizationUrl());
+  } else {
+    Logger.log(&#x27;✅ 권한 정상입니다. 추가 승인이 필요 없습니다.&#x27;);
+  }
 }
 
 // 웹앱 주소로 접속하면 index.html 화면을 보여줌
@@ -362,6 +374,20 @@ function likeEntry(rowNum) {
 &lt;/html&gt;
 </code></pre>
 </div>
+
+<h2>6. 권한 승인 + 작동 테스트 (코드 다 붙여넣은 뒤)</h2>
+<div class="safe">
+  AI 기능은 <b>외부 인터넷 호출</b> 권한이 필요합니다. 새로 생긴 권한이라 다시 승인해야 하는데,
+  <b>권한 창이 안 뜨는 경우</b>가 많아 아래 함수로 처리합니다.
+</div>
+<div class="steps">
+  ① 에디터 상단 함수 드롭다운에서 <b>checkAuth</b> 선택 → <b>▶실행</b><br>
+  ② <b>실행 로그</b>(보기 → 실행 로그) 확인<br>
+  &nbsp;&nbsp;&nbsp;• "⚠️ 권한이 부족합니다" + 링크가 보이면 → <b>그 링크를 열어 승인</b> (고급 → 허용)<br>
+  &nbsp;&nbsp;&nbsp;• "✅ 권한 정상입니다" 면 → 그대로 진행<br>
+  ③ 함수 드롭다운에서 <b>testWelcome</b> 선택 → <b>▶실행</b> → 로그에 <b>한국어 환영 인사 한 문장</b>이 찍히면 성공
+</div>
+<p class="hint">※ 로그가 영어 분석·메타설명으로 나오면 모델이 안 맞는 것 → Code.gs 상단 <kbd>AI_MODEL</kbd>을 <kbd>gemini-2.5-flash-lite</kbd>로 (현재 적용됨).</p>
 
 <p class="hint" style="margin-top:28px">⚠️ 코드 수정 후에는 반드시 <b>배포 → 배포 관리 → 편집(연필) → 버전: 새 버전 → 배포</b>.</p>
 
