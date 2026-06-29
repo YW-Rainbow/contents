@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>봉사활동 관리 시스템 - 복사용</title>
+<style>
+  body { font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+         max-width: 860px; margin: 0 auto; padding: 24px 18px; color: #222; line-height: 1.6; }
+  h1 { font-size: 24px; }
+  h2 { font-size: 18px; margin-top: 36px; border-bottom: 2px solid #2f9e6e; padding-bottom: 6px; }
+  .intro { background: #f5f7f6; border-radius: 10px; padding: 14px 18px; font-size: 14px; }
+  .intro b { color: #2f9e6e; }
+  .note { background: #fff7e6; border-left: 4px solid #f0a500; border-radius: 6px; padding: 12px 16px; font-size: 14px; margin: 14px 0; }
+  .safe { background: #eef7ff; border-left: 4px solid #4a90d9; border-radius: 6px; padding: 12px 16px; font-size: 14px; margin: 14px 0; }
+  .hint { font-size: 13px; color: #666; margin: 6px 0 10px; }
+  .code-wrap { position: relative; }
+  pre { background: #1e1e1e; color: #e6e6e6; border-radius: 10px; padding: 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.5; margin: 0; }
+  code { font-family: Consolas, 'D2Coding', Menlo, monospace; white-space: pre; }
+  .copy-btn { position: absolute; top: 10px; right: 10px; background: #2f9e6e; color: #fff; border: none; border-radius: 7px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+  .copy-btn:active { background: #247a55; }
+  .copy-btn.done { background: #555; }
+  table.head { border-collapse: collapse; margin: 4px 0 12px; font-size: 13px; }
+  table.head td { border: 1px solid #bbb; padding: 5px 10px; text-align: center; background:#f5f7f6; }
+  table.head td.add { background:#fff3d6; font-weight:bold; }
+  kbd { background:#eee; border:1px solid #ccc; border-radius:4px; padding:1px 6px; font-size:13px; }
+</style>
+</head>
+<body>
+
+<h1>🤝 봉사활동 관리 시스템 — 복사용</h1>
+<div class="intro">
+  시트 <b>2개</b>(봉사자명부 · 봉사활동대장)와 화면 <b>2개</b>(봉사자용 · 담당자용)로 된 시스템입니다.
+  서버(Code.gs)는 하나이고, 주소 뒤 <b>?page=admin</b> 여부로 화면이 갈립니다.
+</div>
+
+<div class="safe">
+  <b>설계 원칙</b><br>
+  • 화면에선 <b>이름</b>으로 다루지만, 활동 입력 시 <b>ID도 자동 기록</b>됩니다.<br>
+  • 봉사자 삭제는 <b>비활성(탈퇴)</b> 처리 — 행을 지우지 않아 <b>과거 활동내역이 보존</b>됩니다.<br>
+  • 활동은 담당자가 입력 → 봉사자가 본인 화면에서 <b>사후 확인</b>합니다.<br>• 담당자 화면에서 <b>봉사시간 증명서</b>를 기간별로 발급(인쇄→PDF 저장)할 수 있습니다.
+</div>
+
+<h2>1. 시트 만들기 (2개)</h2>
+<p class="hint"><b>봉사자명부</b> — 기존 컬럼 + <span style="color:#c80">상태</span> 추가 (기존 데이터는 '활성'으로). 빈 칸이면 활성으로 간주합니다.</p>
+<table class="head"><tr><td>봉사자ID</td><td>봉사자명</td><td>연락처</td><td>소속구분</td><td>가입일</td><td class="add">상태</td></tr></table>
+
+<p class="hint"><b>봉사활동대장</b> — 기존 컬럼 + <span style="color:#c80">확인여부 · 확인시각</span> 추가 (기존 활동은 비워두면 됨).</p>
+<table class="head"><tr><td>봉사일자</td><td>활동유형</td><td>봉사자ID</td><td>봉사자명</td><td>소속구분</td><td>봉사시간</td><td>장소</td><td>비고</td><td class="add">확인여부</td><td class="add">확인시각</td></tr></table>
+
+<h2>2. Apps Script 파일 만들기</h2>
+<div class="note">
+  확장 프로그램 → Apps Script 에서:<br>
+  ① <b>Code.gs</b> 내용을 아래 코드로 교체<br>
+  ② ＋ → HTML → 이름 <b>index</b> → 아래 index 코드 붙여넣기<br>
+  ③ ＋ → HTML → 이름 <b>admin</b> → 아래 admin 코드 붙여넣기<br>
+  ※ HTML 파일 이름은 반드시 <kbd>index</kbd>, <kbd>admin</kbd> (Code.gs가 이 이름으로 찾습니다)
+</div>
+
+<h3>Code.gs</h3>
+<div class="code-wrap"><button class="copy-btn" onclick="copyText(this)">복사</button>
+<pre><code id="gs">// ===== 봉사활동 관리 시스템 - Code.gs (서버) =====
+// 시트 2개: &#x27;봉사자명부&#x27;, &#x27;봉사활동대장&#x27;
+// 화면 2개: index.html(봉사자용 확인), admin.html(담당자용 관리)
+
+const SHEET_MEMBER = &#x27;봉사자명부&#x27;;   // 봉사자ID, 봉사자명, 연락처, 소속구분, 가입일, 상태
+const SHEET_LOG    = &#x27;봉사활동대장&#x27;; // 봉사일자, 활동유형, 봉사자ID, 봉사자명, 소속구분, 봉사시간, 장소, 비고, 확인여부, 확인시각
+
+// ───────── 화면 라우팅 ─────────
+// ?page=admin 이면 담당자 화면, 아니면 봉사자 화면
+function doGet(e) {
+  const page = (e &amp;&amp; e.parameter &amp;&amp; e.parameter.page) ? e.parameter.page : &#x27;index&#x27;;
+  const file = (page === &#x27;admin&#x27;) ? &#x27;admin&#x27; : &#x27;index&#x27;;
+  return HtmlService.createHtmlOutputFromFile(file)
+    .setTitle(page === &#x27;admin&#x27; ? &#x27;봉사활동 관리(담당자)&#x27; : &#x27;봉사활동 확인(봉사자)&#x27;)
+    .addMetaTag(&#x27;viewport&#x27;, &#x27;width=device-width, initial-scale=1&#x27;);
+}
+
+// ───────── 공통 도우미 ─────────
+function getSheet_(name) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sheet) throw new Error(&#x27;시트를 찾을 수 없습니다: &#x27; + name);
+  return sheet;
+}
+
+function fmtDate_(v) {
+  if (!v) return &#x27;&#x27;;
+  if (Object.prototype.toString.call(v) === &#x27;[object Date]&#x27;) {
+    return Utilities.formatDate(v, &#x27;GMT+9&#x27;, &#x27;yyyy-MM-dd&#x27;);
+  }
+  return String(v); // 이미 문자열이면 그대로
+}
+
+// ───────── 봉사자명부 ─────────
+// 전체 봉사자 읽기 (행번호 포함). includeInactive=false면 활성만.
+function getMembers(includeInactive) {
+  const sheet = getSheet_(SHEET_MEMBER);
+  const lastRow = sheet.getLastRow();
+  if (lastRow &lt; 2) return [];
+  const values = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+  const list = values.map(function (r, i) {
+    return {
+      rowNum: i + 2,
+      id: r[0],
+      name: r[1],
+      phone: r[2],
+      group: r[3],
+      joinDate: fmtDate_(r[4]),
+      status: r[5] || &#x27;활성&#x27; // 빈 칸이면 활성으로 간주
+    };
+  });
+  return includeInactive ? list : list.filter(function (m) { return m.status !== &#x27;탈퇴&#x27;; });
+}
+
+// 활성 봉사자 이름 목록 (드롭다운용) — id, name만
+function getMemberOptions() {
+  return getMembers(false).map(function (m) { return { id: m.id, name: m.name, group: m.group }; });
+}
+
+// 다음 봉사자ID 자동 생성 (V001, V002 ...)
+function nextMemberId_() {
+  const members = getMembers(true);
+  let max = 0;
+  members.forEach(function (m) {
+    const n = parseInt(String(m.id).replace(/[^0-9]/g, &#x27;&#x27;), 10);
+    if (!isNaN(n) &amp;&amp; n &gt; max) max = n;
+  });
+  return &#x27;V&#x27; + (&#x27;000&#x27; + (max + 1)).slice(-3);
+}
+
+// 봉사자 등록 — 이름/연락처/소속구분 받아서 ID 자동 부여
+function addMember(name, phone, group) {
+  if (!name) throw new Error(&#x27;이름을 입력하세요.&#x27;);
+  const sheet = getSheet_(SHEET_MEMBER);
+  const id = nextMemberId_();
+  const today = Utilities.formatDate(new Date(), &#x27;GMT+9&#x27;, &#x27;yyyy-MM-dd&#x27;);
+  sheet.appendRow([id, name, phone || &#x27;&#x27;, group || &#x27;개인&#x27;, today, &#x27;활성&#x27;]);
+  return getMembers(true);
+}
+
+// 봉사자 수정 — 명부 정보만 변경 (활동대장은 안 건드림)
+function updateMember(rowNum, name, phone, group) {
+  const sheet = getSheet_(SHEET_MEMBER);
+  sheet.getRange(rowNum, 2).setValue(name);  // 봉사자명
+  sheet.getRange(rowNum, 3).setValue(phone); // 연락처
+  sheet.getRange(rowNum, 4).setValue(group); // 소속구분
+  return getMembers(true);
+}
+
+// 봉사자 비활성(탈퇴) — 행을 지우지 않고 상태만 변경 → 활동내역 보존
+function deactivateMember(rowNum) {
+  const sheet = getSheet_(SHEET_MEMBER);
+  sheet.getRange(rowNum, 6).setValue(&#x27;탈퇴&#x27;); // 상태
+  return getMembers(true);
+}
+
+// 봉사자 검색 — 이름 또는 ID 부분일치 (활성/탈퇴 모두)
+function searchMembers(keyword) {
+  const kw = String(keyword || &#x27;&#x27;).trim().toLowerCase();
+  const all = getMembers(true);
+  if (!kw) return all;
+  return all.filter(function (m) {
+    return String(m.name).toLowerCase().indexOf(kw) &gt; -1 ||
+           String(m.id).toLowerCase().indexOf(kw) &gt; -1;
+  });
+}
+
+// ───────── 봉사활동대장 ─────────
+// 활동 전체 읽기 (행번호 포함)
+function getLogs_() {
+  const sheet = getSheet_(SHEET_LOG);
+  const lastRow = sheet.getLastRow();
+  if (lastRow &lt; 2) return [];
+  const values = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+  return values.map(function (r, i) {
+    return {
+      rowNum: i + 2,
+      date: fmtDate_(r[0]),
+      type: r[1],
+      id: r[2],
+      name: r[3],
+      group: r[4],
+      hours: Number(r[5]) || 0,
+      place: r[6],
+      note: r[7],
+      confirmed: r[8] || &#x27;&#x27;,        // 확인여부 (&#x27;확인&#x27; 또는 빈칸)
+      confirmTime: r[8] ? fmtDate_(r[9]) + &#x27; &#x27; + (r[9] ? Utilities.formatDate(new Date(r[9]), &#x27;GMT+9&#x27;, &#x27;HH:mm&#x27;) : &#x27;&#x27;) : &#x27;&#x27;
+    };
+  });
+}
+
+// 활동 일괄 입력
+// common = {date, type, place}, rows = [{name, id, hours, type?, place?, note?}, ...]
+// 줄마다 type/place가 있으면 공통값을 덮어씀
+function addActivities(common, rows) {
+  if (!rows || !rows.length) throw new Error(&#x27;입력할 봉사자가 없습니다.&#x27;);
+  const sheet = getSheet_(SHEET_LOG);
+
+  // 이름→소속구분 매핑 (소속을 자동으로 채우기 위해)
+  const memberMap = {};
+  getMembers(true).forEach(function (m) { memberMap[m.id] = m.group; });
+
+  const toAppend = rows.map(function (row) {
+    const type  = row.type  || common.type;
+    const place = row.place || common.place;
+    const group = memberMap[row.id] || &#x27;&#x27;;
+    return [
+      common.date,        // 봉사일자
+      type,               // 활동유형
+      row.id,             // 봉사자ID (자동 기록)
+      row.name,           // 봉사자명
+      group,              // 소속구분 (명부에서 자동)
+      Number(row.hours) || 0, // 봉사시간
+      place,              // 장소
+      row.note || &#x27;&#x27;,     // 비고
+      &#x27;&#x27;,                 // 확인여부 (미확인)
+      &#x27;&#x27;                  // 확인시각
+    ];
+  });
+
+  // 여러 행을 한 번에 추가 (마지막 행 다음부터)
+  const start = sheet.getLastRow() + 1;
+  sheet.getRange(start, 1, toAppend.length, 10).setValues(toAppend);
+  return { added: toAppend.length };
+}
+
+// ───────── 봉사자용 (index) ─────────
+// 이름으로 본인 활동내역 조회 + 누적시간
+function getMyActivities(name) {
+  const nm = String(name || &#x27;&#x27;).trim();
+  if (!nm) return { name: nm, total: 0, items: [] };
+  const items = getLogs_().filter(function (l) { return String(l.name).trim() === nm; });
+  const total = items.reduce(function (s, l) { return s + l.hours; }, 0);
+  // 최신 활동이 위로
+  items.sort(function (a, b) { return a.date &lt; b.date ? 1 : -1; });
+  return { name: nm, total: total, items: items };
+}
+
+// 봉사자가 본인 활동을 &#x27;확인&#x27; 처리
+function confirmActivity(rowNum) {
+  const sheet = getSheet_(SHEET_LOG);
+  sheet.getRange(rowNum, 9).setValue(&#x27;확인&#x27;);       // 확인여부
+  sheet.getRange(rowNum, 10).setValue(new Date());  // 확인시각
+  return true;
+}
+
+// ───────── 봉사시간 증명서 (admin) ─────────
+// 특정 봉사자의 기간 내 활동을 모아 증명서용 데이터로 반환
+function getCertificate(memberId, startDate, endDate) {
+  const member = getMembers(true).filter(function (m) { return m.id === memberId; })[0];
+  if (!member) throw new Error(&#x27;봉사자를 찾을 수 없습니다.&#x27;);
+
+  let logs = getLogs_().filter(function (l) { return l.id === memberId; });
+  if (startDate) logs = logs.filter(function (l) { return l.date &gt;= startDate; });
+  if (endDate)   logs = logs.filter(function (l) { return l.date &lt;= endDate; });
+  logs.sort(function (a, b) { return a.date &lt; b.date ? -1 : 1; }); // 오래된 순
+
+  const total = logs.reduce(function (s, l) { return s + l.hours; }, 0);
+  const issueDate = Utilities.formatDate(new Date(), &#x27;GMT+9&#x27;, &#x27;yyyy년 MM월 dd일&#x27;);
+
+  return {
+    name: member.name,
+    group: member.group,
+    id: member.id,
+    start: startDate || (logs.length ? logs[0].date : &#x27;&#x27;),
+    end: endDate || (logs.length ? logs[logs.length - 1].date : &#x27;&#x27;),
+    total: total,
+    count: logs.length,
+    items: logs,
+    issueDate: issueDate
+  };
+}
+// 기간(start~end, &#x27;yyyy-MM-dd&#x27;) 안의 활동을 집계. 비우면 전체.
+function getStats(startDate, endDate) {
+  let logs = getLogs_();
+  if (startDate) logs = logs.filter(function (l) { return l.date &gt;= startDate; });
+  if (endDate)   logs = logs.filter(function (l) { return l.date &lt;= endDate; });
+
+  let totalHours = 0;
+  const byType = {};
+  const byGroup = {};
+  const byMonth = {};
+  const people = {};
+
+  logs.forEach(function (l) {
+    totalHours += l.hours;
+    byType[l.type]   = (byType[l.type]   || 0) + l.hours;
+    byGroup[l.group] = (byGroup[l.group] || 0) + l.hours;
+    const month = String(l.date).slice(0, 7); // yyyy-MM
+    byMonth[month] = (byMonth[month] || 0) + l.hours;
+    people[l.name] = true;
+  });
+
+  return {
+    count: logs.length,           // 활동 건수
+    people: Object.keys(people).length, // 참여 인원수
+    totalHours: totalHours,       // 총 봉사시간
+    byType: byType,
+    byGroup: byGroup,
+    byMonth: byMonth,
+    logs: logs                    // 상세 목록(표로 보여줄 용)
+  };
+}
+</code></pre></div>
+
+<h3>index (봉사자용 화면)</h3>
+<div class="code-wrap"><button class="copy-btn" onclick="copyText(this)">복사</button>
+<pre><code id="idx">&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;ko&quot;&gt;
+&lt;head&gt;
+  &lt;base target=&quot;_top&quot;&gt;
+  &lt;meta charset=&quot;utf-8&quot;&gt;
+  &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+  &lt;style&gt;
+    body { font-family: -apple-system, &#x27;Apple SD Gothic Neo&#x27;, &#x27;Malgun Gothic&#x27;, sans-serif;
+           max-width: 640px; margin: 0 auto; padding: 20px; background: #f5f5f7; color: #222; }
+    h1 { font-size: 22px; }
+    .box { background: #fff; padding: 16px; border-radius: 12px; margin-bottom: 16px; }
+    input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #ddd;
+            border-radius: 8px; font-size: 15px; font-family: inherit; }
+    button { background: #2f9e6e; color: #fff; border: none; padding: 10px 18px;
+             border-radius: 8px; font-size: 14px; cursor: pointer; }
+    button:disabled { background: #aaa; }
+    .summary { font-size: 15px; margin: 8px 0 16px; }
+    .summary b { color: #2f9e6e; font-size: 20px; }
+    .item { background: #fff; padding: 12px 16px; border-radius: 12px; margin-bottom: 10px;
+            display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .item .info { font-size: 14px; }
+    .item .meta { font-size: 12px; color: #888; margin-top: 3px; }
+    .confirm-btn { background: #4a90d9; white-space: nowrap; }
+    .confirmed { color: #2f9e6e; font-size: 13px; font-weight: bold; white-space: nowrap; }
+    #status { color: #888; font-size: 13px; }
+  &lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;h1&gt;🙋 내 봉사활동 확인&lt;/h1&gt;
+
+  &lt;div class=&quot;box&quot;&gt;
+    &lt;input type=&quot;text&quot; id=&quot;name&quot; placeholder=&quot;이름을 입력하세요&quot; onkeydown=&quot;if(event.key===&#x27;Enter&#x27;)search()&quot;&gt;
+    &lt;div style=&quot;margin-top:8px&quot;&gt;&lt;button id=&quot;searchBtn&quot; onclick=&quot;search()&quot;&gt;내 활동 조회&lt;/button&gt;&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;p id=&quot;status&quot;&gt;이름을 입력하고 조회하세요.&lt;/p&gt;
+  &lt;div class=&quot;summary&quot; id=&quot;summary&quot;&gt;&lt;/div&gt;
+  &lt;div id=&quot;list&quot;&gt;&lt;/div&gt;
+
+  &lt;script&gt;
+    function search() {
+      const name = document.getElementById(&#x27;name&#x27;).value.trim();
+      if (!name) { alert(&#x27;이름을 입력하세요.&#x27;); return; }
+      const btn = document.getElementById(&#x27;searchBtn&#x27;);
+      btn.disabled = true; btn.textContent = &#x27;조회 중...&#x27;;
+      document.getElementById(&#x27;status&#x27;).textContent = &#x27;조회 중...&#x27;;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          showResult(res);
+          btn.disabled = false; btn.textContent = &#x27;내 활동 조회&#x27;;
+        })
+        .withFailureHandler(function (err) {
+          document.getElementById(&#x27;status&#x27;).textContent = &#x27;조회 실패: &#x27; + err.message;
+          btn.disabled = false; btn.textContent = &#x27;내 활동 조회&#x27;;
+        })
+        .getMyActivities(name);
+    }
+
+    function showResult(res) {
+      const status = document.getElementById(&#x27;status&#x27;);
+      const summary = document.getElementById(&#x27;summary&#x27;);
+      const list = document.getElementById(&#x27;list&#x27;);
+
+      if (!res.items || res.items.length === 0) {
+        status.textContent = &#x27;&quot;&#x27; + res.name + &#x27;&quot; 님의 활동 기록이 없습니다.&#x27;;
+        summary.innerHTML = &#x27;&#x27;;
+        list.innerHTML = &#x27;&#x27;;
+        return;
+      }
+
+      status.textContent = res.name + &#x27; 님의 봉사활동&#x27;;
+      summary.innerHTML = &#x27;누적 봉사시간 &lt;b&gt;&#x27; + res.total + &#x27;&lt;/b&gt; 시간 · 총 &#x27; + res.items.length + &#x27;건&#x27;;
+
+      list.innerHTML = res.items.map(function (it) {
+        const right = (it.confirmed === &#x27;확인&#x27;)
+          ? &#x27;&lt;span class=&quot;confirmed&quot;&gt;✓ 확인완료&lt;br&gt;&#x27; + it.confirmTime + &#x27;&lt;/span&gt;&#x27;
+          : &#x27;&lt;button class=&quot;confirm-btn&quot; onclick=&quot;confirmIt(&#x27; + it.rowNum + &#x27;, this)&quot;&gt;확인&lt;/button&gt;&#x27;;
+        return &#x27;&lt;div class=&quot;item&quot;&gt;&#x27; +
+                 &#x27;&lt;div class=&quot;info&quot;&gt;&#x27; +
+                   &#x27;&lt;b&gt;&#x27; + escapeHtml(it.date) + &#x27;&lt;/b&gt; · &#x27; + escapeHtml(it.type) + &#x27; · &#x27; + it.hours + &#x27;시간&#x27; +
+                   &#x27;&lt;div class=&quot;meta&quot;&gt;&#x27; + escapeHtml(it.place || &#x27;&#x27;) + (it.note ? &#x27; · &#x27; + escapeHtml(it.note) : &#x27;&#x27;) + &#x27;&lt;/div&gt;&#x27; +
+                 &#x27;&lt;/div&gt;&#x27; +
+                 right +
+               &#x27;&lt;/div&gt;&#x27;;
+      }).join(&#x27;&#x27;);
+    }
+
+    function confirmIt(rowNum, btn) {
+      btn.disabled = true; btn.textContent = &#x27;처리 중...&#x27;;
+      google.script.run
+        .withSuccessHandler(function () { search(); }) // 확인 후 목록 새로고침
+        .withFailureHandler(function (err) {
+          alert(&#x27;확인 실패: &#x27; + err.message);
+          btn.disabled = false; btn.textContent = &#x27;확인&#x27;;
+        })
+        .confirmActivity(rowNum);
+    }
+
+    function escapeHtml(t) {
+      const d = document.createElement(&#x27;div&#x27;); d.textContent = t == null ? &#x27;&#x27; : t; return d.innerHTML;
+    }
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></div>
+
+<h3>admin (담당자용 화면)</h3>
+<div class="code-wrap"><button class="copy-btn" onclick="copyText(this)">복사</button>
+<pre><code id="adm">&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;ko&quot;&gt;
+&lt;head&gt;
+  &lt;base target=&quot;_top&quot;&gt;
+  &lt;meta charset=&quot;utf-8&quot;&gt;
+  &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+  &lt;style&gt;
+    body { font-family: -apple-system, &#x27;Apple SD Gothic Neo&#x27;, &#x27;Malgun Gothic&#x27;, sans-serif;
+           max-width: 920px; margin: 0 auto; padding: 20px; background: #f5f5f7; color: #222; }
+    h1 { font-size: 22px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .tab { background: #e7e7ea; border: none; padding: 9px 16px; border-radius: 20px;
+           font-size: 14px; cursor: pointer; }
+    .tab.active { background: #2f9e6e; color: #fff; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .box { background: #fff; padding: 16px; border-radius: 12px; margin-bottom: 16px; }
+    label { font-size: 13px; color: #555; display: block; margin: 8px 0 3px; }
+    input, select { box-sizing: border-box; padding: 8px; border: 1px solid #ddd;
+                    border-radius: 7px; font-size: 14px; font-family: inherit; }
+    button { background: #2f9e6e; color: #fff; border: none; padding: 9px 16px;
+             border-radius: 8px; font-size: 14px; cursor: pointer; }
+    button:disabled { background: #aaa; }
+    button.sub { background: #4a90d9; }
+    button.warn { background: #d9684a; }
+    button.ghost { background: #eee; color: #333; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+    th, td { border: 1px solid #eee; padding: 7px 9px; text-align: left; }
+    th { background: #f0f7f4; }
+    .row-flex { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+    .stat-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .card { background: #fff; border-radius: 12px; padding: 14px 18px; flex: 1; min-width: 120px; }
+    .card .num { font-size: 24px; font-weight: bold; color: #2f9e6e; }
+    .card .lbl { font-size: 12px; color: #888; }
+    .muted { color: #999; }
+    .inactive { color: #c33; }
+    #inputRows .irow { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .msg { font-size: 13px; color: #2f9e6e; margin-top: 8px; }
+
+    /* 증명서 */
+    .cert { background:#fff; max-width:720px; margin:0 auto; padding:48px 56px; border:1px solid #ddd; }
+    .cert h2.title { text-align:center; font-size:30px; letter-spacing:14px; border:none; margin:0 0 36px; padding:0; }
+    .cert .field { display:flex; font-size:16px; margin:10px 0; }
+    .cert .field .k { width:110px; color:#555; }
+    .cert .field .v { flex:1; font-weight:bold; }
+    .cert .body { margin:28px 0; font-size:16px; line-height:2; text-align:center; }
+    .cert .body .big { font-size:22px; color:#2f9e6e; font-weight:bold; }
+    .cert table { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
+    .cert th, .cert td { border:1px solid #ccc; padding:6px 8px; text-align:center; }
+    .cert .issue { text-align:center; margin-top:36px; font-size:16px; }
+    .cert .org { text-align:center; margin-top:20px; font-size:20px; font-weight:bold; letter-spacing:4px; }
+
+    /* 인쇄: 증명서만 남기고 모두 숨김 */
+    @media print {
+      body { background:#fff; max-width:none; padding:0; }
+      .no-print, .tabs, h1 { display:none !important; }
+      .panel { display:none !important; }
+      .panel#panel-cert { display:block !important; }
+      .cert { border:none; max-width:none; }
+    }
+  &lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;h1&gt;🗂️ 봉사활동 관리 (담당자)&lt;/h1&gt;
+  &lt;div class=&quot;tabs&quot;&gt;
+    &lt;button class=&quot;tab active&quot; onclick=&quot;showTab(&#x27;members&#x27;, this)&quot;&gt;봉사자 관리&lt;/button&gt;
+    &lt;button class=&quot;tab&quot; onclick=&quot;showTab(&#x27;input&#x27;, this)&quot;&gt;활동 입력&lt;/button&gt;
+    &lt;button class=&quot;tab&quot; onclick=&quot;showTab(&#x27;stats&#x27;, this)&quot;&gt;현황&lt;/button&gt;
+    &lt;button class=&quot;tab&quot; onclick=&quot;showTab(&#x27;cert&#x27;, this)&quot;&gt;증명서 발급&lt;/button&gt;
+  &lt;/div&gt;
+
+  &lt;!-- ===== 봉사자 관리 ===== --&gt;
+  &lt;div class=&quot;panel active&quot; id=&quot;panel-members&quot;&gt;
+    &lt;div class=&quot;box&quot;&gt;
+      &lt;b&gt;봉사자 등록&lt;/b&gt;
+      &lt;div class=&quot;row-flex&quot;&gt;
+        &lt;div&gt;&lt;label&gt;이름&lt;/label&gt;&lt;input id=&quot;m_name&quot; placeholder=&quot;이름&quot;&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;연락처&lt;/label&gt;&lt;input id=&quot;m_phone&quot; placeholder=&quot;010-&quot;&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;소속구분&lt;/label&gt;
+          &lt;select id=&quot;m_group&quot;&gt;
+            &lt;option&gt;개인&lt;/option&gt;&lt;option&gt;기업&lt;/option&gt;&lt;option&gt;종교단체&lt;/option&gt;&lt;option&gt;대학생&lt;/option&gt;
+          &lt;/select&gt;
+        &lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;&amp;nbsp;&lt;/label&gt;&lt;button onclick=&quot;register()&quot;&gt;등록&lt;/button&gt;&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;msg&quot; id=&quot;m_msg&quot;&gt;&lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class=&quot;box&quot;&gt;
+      &lt;div class=&quot;row-flex&quot; style=&quot;margin-bottom:10px&quot;&gt;
+        &lt;div style=&quot;flex:1&quot;&gt;&lt;label&gt;검색 (이름 또는 ID)&lt;/label&gt;
+          &lt;input id=&quot;m_search&quot; style=&quot;width:100%&quot; placeholder=&quot;이름 또는 V001&quot; onkeyup=&quot;renderMembers()&quot;&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+      &lt;table id=&quot;memberTable&quot;&gt;&lt;tbody&gt;&lt;tr&gt;&lt;td class=&quot;muted&quot;&gt;불러오는 중...&lt;/td&gt;&lt;/tr&gt;&lt;/tbody&gt;&lt;/table&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;!-- ===== 활동 입력 ===== --&gt;
+  &lt;div class=&quot;panel&quot; id=&quot;panel-input&quot;&gt;
+    &lt;div class=&quot;box&quot;&gt;
+      &lt;b&gt;공통 정보&lt;/b&gt; (아래 봉사자 모두에게 적용 / 줄마다 덮어쓸 수 있음)
+      &lt;div class=&quot;row-flex&quot;&gt;
+        &lt;div&gt;&lt;label&gt;봉사일자&lt;/label&gt;&lt;input type=&quot;date&quot; id=&quot;c_date&quot;&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;활동유형&lt;/label&gt;&lt;select id=&quot;c_type&quot; onchange=&quot;typeChange(&#x27;c_type&#x27;,&#x27;c_type_etc&#x27;)&quot;&gt;&lt;/select&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;input id=&quot;c_type_etc&quot; placeholder=&quot;직접입력&quot; style=&quot;display:none&quot;&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;장소&lt;/label&gt;&lt;select id=&quot;c_place&quot; onchange=&quot;typeChange(&#x27;c_place&#x27;,&#x27;c_place_etc&#x27;)&quot;&gt;&lt;/select&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;input id=&quot;c_place_etc&quot; placeholder=&quot;직접입력&quot; style=&quot;display:none&quot;&gt;&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class=&quot;box&quot;&gt;
+      &lt;b&gt;봉사자별 입력&lt;/b&gt;
+      &lt;div id=&quot;inputRows&quot;&gt;&lt;/div&gt;
+      &lt;button class=&quot;ghost&quot; onclick=&quot;addInputRow()&quot;&gt;+ 봉사자 추가&lt;/button&gt;
+      &lt;hr style=&quot;border:none;border-top:1px solid #eee;margin:14px 0&quot;&gt;
+      &lt;button onclick=&quot;saveActivities()&quot; id=&quot;saveBtn&quot;&gt;전체 저장&lt;/button&gt;
+      &lt;div class=&quot;msg&quot; id=&quot;i_msg&quot;&gt;&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;!-- ===== 현황 ===== --&gt;
+  &lt;div class=&quot;panel&quot; id=&quot;panel-stats&quot;&gt;
+    &lt;div class=&quot;box&quot;&gt;
+      &lt;div class=&quot;row-flex&quot;&gt;
+        &lt;div&gt;&lt;label&gt;월 선택&lt;/label&gt;&lt;input type=&quot;month&quot; id=&quot;s_month&quot; onchange=&quot;monthPick()&quot;&gt;&lt;/div&gt;
+        &lt;div class=&quot;muted&quot; style=&quot;padding:0 4px 8px&quot;&gt;또는&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;시작일&lt;/label&gt;&lt;input type=&quot;date&quot; id=&quot;s_start&quot;&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;종료일&lt;/label&gt;&lt;input type=&quot;date&quot; id=&quot;s_end&quot;&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;&amp;nbsp;&lt;/label&gt;&lt;button onclick=&quot;loadStats()&quot;&gt;조회&lt;/button&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;&amp;nbsp;&lt;/label&gt;&lt;button class=&quot;ghost&quot; onclick=&quot;clearRange()&quot;&gt;전체&lt;/button&gt;&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div id=&quot;statsResult&quot;&gt;&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;!-- ===== 증명서 발급 ===== --&gt;
+  &lt;div class=&quot;panel&quot; id=&quot;panel-cert&quot;&gt;
+    &lt;div class=&quot;box no-print&quot;&gt;
+      &lt;div class=&quot;row-flex&quot;&gt;
+        &lt;div&gt;&lt;label&gt;봉사자&lt;/label&gt;&lt;select id=&quot;cert_member&quot;&gt;&lt;/select&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;시작일(선택)&lt;/label&gt;&lt;input type=&quot;date&quot; id=&quot;cert_start&quot;&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;종료일(선택)&lt;/label&gt;&lt;input type=&quot;date&quot; id=&quot;cert_end&quot;&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;&amp;nbsp;&lt;/label&gt;&lt;button onclick=&quot;makeCert()&quot;&gt;증명서 생성&lt;/button&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;label&gt;&amp;nbsp;&lt;/label&gt;&lt;button class=&quot;sub&quot; id=&quot;printBtn&quot; onclick=&quot;window.print()&quot; style=&quot;display:none&quot;&gt;인쇄 / PDF 저장&lt;/button&gt;&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;hint&quot;&gt;기간을 비우면 전체 누적으로 발급됩니다. 생성 후 &quot;인쇄 / PDF 저장&quot;을 누르고 대상을 &#x27;PDF로 저장&#x27;으로 선택하세요.&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div id=&quot;certArea&quot;&gt;&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;script&gt;
+    // 드롭다운 기본 항목
+    const TYPES  = [&#x27;배식&#x27;,&#x27;말벗&#x27;,&#x27;행사지원&#x27;,&#x27;환경정화&#x27;,&#x27;사무지원&#x27;];
+    const PLACES = [&#x27;경로식당&#x27;,&#x27;가정방문&#x27;,&#x27;본관 식당&#x27;,&#x27;야외무대&#x27;,&#x27;어르신 사랑방&#x27;,&#x27;안산자락길&#x27;,&#x27;운영지원팀 사무실&#x27;];
+
+    let MEMBERS = [];        // 봉사자 목록 캐시
+    let OPTIONS = [];        // 드롭다운용 활성 봉사자
+
+    window.onload = function () {
+      // 공통 날짜 기본값 = 오늘 (KST 안전: toISOString은 UTC라 새벽에 하루 밀림)
+      document.getElementById(&#x27;c_date&#x27;).value = todayStr();
+      fillSelect(&#x27;c_type&#x27;, TYPES);
+      fillSelect(&#x27;c_place&#x27;, PLACES);
+      loadMembers();
+    };
+
+    function todayStr() {
+      const d = new Date();
+      return d.getFullYear() + &#x27;-&#x27; + (&#x27;0&#x27; + (d.getMonth()+1)).slice(-2) + &#x27;-&#x27; + (&#x27;0&#x27; + d.getDate()).slice(-2);
+    }
+
+    // ----- 탭 -----
+    function showTab(name, btn) {
+      document.querySelectorAll(&#x27;.panel&#x27;).forEach(function (p){ p.classList.remove(&#x27;active&#x27;); });
+      document.querySelectorAll(&#x27;.tab&#x27;).forEach(function (t){ t.classList.remove(&#x27;active&#x27;); });
+      document.getElementById(&#x27;panel-&#x27; + name).classList.add(&#x27;active&#x27;);
+      btn.classList.add(&#x27;active&#x27;);
+    }
+
+    // ----- 드롭다운 도우미 -----
+    function fillSelect(id, arr) {
+      const sel = document.getElementById(id);
+      sel.innerHTML = arr.map(function (v){ return &#x27;&lt;option&gt;&#x27; + v + &#x27;&lt;/option&gt;&#x27;; }).join(&#x27;&#x27;)
+                    + &#x27;&lt;option value=&quot;__etc__&quot;&gt;직접입력&lt;/option&gt;&#x27;;
+    }
+    function typeChange(selId, etcId) {
+      document.getElementById(etcId).style.display =
+        (document.getElementById(selId).value === &#x27;__etc__&#x27;) ? &#x27;inline-block&#x27; : &#x27;none&#x27;;
+    }
+    function readSelect(selId, etcId) {
+      const v = document.getElementById(selId).value;
+      return (v === &#x27;__etc__&#x27;) ? document.getElementById(etcId).value.trim() : v;
+    }
+
+    // ================= 봉사자 관리 =================
+    function loadMembers() {
+      google.script.run
+        .withSuccessHandler(function (list) {
+          MEMBERS = list;
+          OPTIONS = list.filter(function(m){ return m.status !== &#x27;탈퇴&#x27;; });
+          renderMembers();
+          renderInputRows(); // 입력 탭 드롭다운도 갱신
+          fillCertMembers();  // 증명서 탭 드롭다운도 갱신
+        })
+        .withFailureHandler(function (err) {
+          document.querySelector(&#x27;#memberTable tbody&#x27;).innerHTML =
+            &#x27;&lt;tr&gt;&lt;td class=&quot;inactive&quot;&gt;불러오기 실패: &#x27; + err.message + &#x27;&lt;/td&gt;&lt;/tr&gt;&#x27;;
+        })
+        .getMembers(true);
+    }
+
+    function renderMembers() {
+      const kw = document.getElementById(&#x27;m_search&#x27;).value.trim().toLowerCase();
+      const rows = MEMBERS.filter(function (m) {
+        if (!kw) return true;
+        return String(m.name).toLowerCase().indexOf(kw) &gt; -1 ||
+               String(m.id).toLowerCase().indexOf(kw) &gt; -1;
+      });
+      const tbody = document.querySelector(&#x27;#memberTable tbody&#x27;);
+      if (rows.length === 0) { tbody.innerHTML = &#x27;&lt;tr&gt;&lt;td class=&quot;muted&quot;&gt;결과 없음&lt;/td&gt;&lt;/tr&gt;&#x27;; return; }
+      let html = &#x27;&lt;tr&gt;&lt;th&gt;ID&lt;/th&gt;&lt;th&gt;이름&lt;/th&gt;&lt;th&gt;연락처&lt;/th&gt;&lt;th&gt;소속&lt;/th&gt;&lt;th&gt;가입일&lt;/th&gt;&lt;th&gt;상태&lt;/th&gt;&lt;th&gt;관리&lt;/th&gt;&lt;/tr&gt;&#x27;;
+      html += rows.map(function (m) {
+        const st = (m.status === &#x27;탈퇴&#x27;) ? &#x27;&lt;span class=&quot;inactive&quot;&gt;탈퇴&lt;/span&gt;&#x27; : &#x27;활성&#x27;;
+        const actions = (m.status === &#x27;탈퇴&#x27;) ? &#x27;&#x27;
+          : &#x27;&lt;button class=&quot;sub&quot; onclick=&quot;editMember(&#x27; + m.rowNum + &#x27;)&quot;&gt;수정&lt;/button&gt; &#x27; +
+            &#x27;&lt;button class=&quot;warn&quot; onclick=&quot;removeMember(&#x27; + m.rowNum + &#x27;,\&#x27;&#x27; + m.name + &#x27;\&#x27;)&quot;&gt;비활성&lt;/button&gt;&#x27;;
+        return &#x27;&lt;tr&gt;&#x27; +
+          &#x27;&lt;td&gt;&#x27; + m.id + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + esc(m.name) + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + esc(m.phone) + &#x27;&lt;/td&gt;&#x27; +
+          &#x27;&lt;td&gt;&#x27; + esc(m.group) + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + esc(m.joinDate) + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + st + &#x27;&lt;/td&gt;&#x27; +
+          &#x27;&lt;td style=&quot;white-space:nowrap&quot;&gt;&#x27; + actions + &#x27;&lt;/td&gt;&lt;/tr&gt;&#x27;;
+      }).join(&#x27;&#x27;);
+      tbody.innerHTML = html;
+    }
+
+    function register() {
+      const name = document.getElementById(&#x27;m_name&#x27;).value.trim();
+      const phone = document.getElementById(&#x27;m_phone&#x27;).value.trim();
+      const group = document.getElementById(&#x27;m_group&#x27;).value;
+      if (!name) { alert(&#x27;이름을 입력하세요.&#x27;); return; }
+      google.script.run
+        .withSuccessHandler(function (list) {
+          MEMBERS = list; OPTIONS = list.filter(function(m){return m.status!==&#x27;탈퇴&#x27;;});
+          document.getElementById(&#x27;m_name&#x27;).value = &#x27;&#x27;;
+          document.getElementById(&#x27;m_phone&#x27;).value = &#x27;&#x27;;
+          document.getElementById(&#x27;m_msg&#x27;).textContent = name + &#x27; 님 등록 완료&#x27;;
+          renderMembers(); renderInputRows();
+        })
+        .withFailureHandler(function (err){ alert(&#x27;등록 실패: &#x27; + err.message); })
+        .addMember(name, phone, group);
+    }
+
+    function editMember(rowNum) {
+      const m = MEMBERS.filter(function(x){return x.rowNum===rowNum;})[0];
+      if (!m) return;
+      const name = prompt(&#x27;이름&#x27;, m.name); if (name === null) return;
+      const phone = prompt(&#x27;연락처&#x27;, m.phone); if (phone === null) return;
+      const group = prompt(&#x27;소속구분 (개인/기업/종교단체/대학생)&#x27;, m.group); if (group === null) return;
+      google.script.run
+        .withSuccessHandler(function (list){ MEMBERS=list; OPTIONS=list.filter(function(x){return x.status!==&#x27;탈퇴&#x27;;}); renderMembers(); renderInputRows(); })
+        .withFailureHandler(function (err){ alert(&#x27;수정 실패: &#x27; + err.message); })
+        .updateMember(rowNum, name.trim(), phone.trim(), group.trim());
+    }
+
+    function removeMember(rowNum, name) {
+      if (!confirm(name + &#x27; 님을 비활성(탈퇴) 처리할까요?\n활동 기록은 그대로 보존됩니다.&#x27;)) return;
+      google.script.run
+        .withSuccessHandler(function (list){ MEMBERS=list; OPTIONS=list.filter(function(x){return x.status!==&#x27;탈퇴&#x27;;}); renderMembers(); renderInputRows(); })
+        .withFailureHandler(function (err){ alert(&#x27;처리 실패: &#x27; + err.message); })
+        .deactivateMember(rowNum);
+    }
+
+    // ================= 활동 입력 =================
+    function renderInputRows() {
+      // 기존 줄이 없으면 한 줄 만들고, 있으면 드롭다운만 갱신
+      const container = document.getElementById(&#x27;inputRows&#x27;);
+      if (container.children.length === 0) addInputRow();
+      else refreshNameSelects();
+    }
+
+    function nameOptionsHtml() {
+      return &#x27;&lt;option value=&quot;&quot;&gt;-- 봉사자 선택 --&lt;/option&gt;&#x27; +
+        OPTIONS.map(function (m){ return &#x27;&lt;option value=&quot;&#x27; + m.id + &#x27;&quot;&gt;&#x27; + esc(m.name) + &#x27; (&#x27; + m.id + &#x27;)&lt;/option&gt;&#x27;; }).join(&#x27;&#x27;);
+    }
+
+    function addInputRow() {
+      const div = document.createElement(&#x27;div&#x27;);
+      div.className = &#x27;irow&#x27;;
+      div.innerHTML =
+        &#x27;&lt;select class=&quot;in-name&quot; style=&quot;flex:2&quot;&gt;&#x27; + nameOptionsHtml() + &#x27;&lt;/select&gt;&#x27; +
+        &#x27;&lt;input class=&quot;in-hours&quot; type=&quot;number&quot; step=&quot;0.5&quot; min=&quot;0&quot; value=&quot;2&quot; style=&quot;width:80px&quot; title=&quot;봉사시간&quot;&gt;&#x27; +
+        &#x27;&lt;input class=&quot;in-note&quot; placeholder=&quot;비고(선택)&quot; style=&quot;flex:1&quot;&gt;&#x27; +
+        &#x27;&lt;button class=&quot;ghost&quot; onclick=&quot;this.parentNode.remove()&quot;&gt;삭제&lt;/button&gt;&#x27;;
+      document.getElementById(&#x27;inputRows&#x27;).appendChild(div);
+    }
+
+    function refreshNameSelects() {
+      document.querySelectorAll(&#x27;#inputRows .in-name&#x27;).forEach(function (sel) {
+        const cur = sel.value;
+        sel.innerHTML = nameOptionsHtml();
+        sel.value = cur;
+      });
+    }
+
+    function saveActivities() {
+      const date = document.getElementById(&#x27;c_date&#x27;).value;
+      const type = readSelect(&#x27;c_type&#x27;,&#x27;c_type_etc&#x27;);
+      const place = readSelect(&#x27;c_place&#x27;,&#x27;c_place_etc&#x27;);
+      if (!date) { alert(&#x27;봉사일자를 선택하세요.&#x27;); return; }
+
+      const rows = [];
+      document.querySelectorAll(&#x27;#inputRows .irow&#x27;).forEach(function (r) {
+        const sel = r.querySelector(&#x27;.in-name&#x27;);
+        const id = sel.value;
+        if (!id) return; // 선택 안 한 줄은 건너뜀
+        const name = sel.options[sel.selectedIndex].text.replace(/\s*\(.*\)$/, &#x27;&#x27;);
+        rows.push({
+          id: id, name: name,
+          hours: r.querySelector(&#x27;.in-hours&#x27;).value,
+          note: r.querySelector(&#x27;.in-note&#x27;).value.trim()
+        });
+      });
+      if (rows.length === 0) { alert(&#x27;봉사자를 한 명 이상 선택하세요.&#x27;); return; }
+
+      const btn = document.getElementById(&#x27;saveBtn&#x27;);
+      btn.disabled = true; btn.textContent = &#x27;저장 중...&#x27;;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          document.getElementById(&#x27;i_msg&#x27;).textContent = res.added + &#x27;건 저장 완료&#x27;;
+          // 입력 줄 초기화 (공통값은 유지)
+          document.getElementById(&#x27;inputRows&#x27;).innerHTML = &#x27;&#x27;;
+          addInputRow();
+          btn.disabled = false; btn.textContent = &#x27;전체 저장&#x27;;
+        })
+        .withFailureHandler(function (err) {
+          alert(&#x27;저장 실패: &#x27; + err.message);
+          btn.disabled = false; btn.textContent = &#x27;전체 저장&#x27;;
+        })
+        .addActivities({ date: date, type: type, place: place }, rows);
+    }
+
+    // ================= 현황 =================
+    function monthPick() {
+      // 월을 고르면 시작/종료일 자동 채움
+      const m = document.getElementById(&#x27;s_month&#x27;).value; // yyyy-MM
+      if (!m) return;
+      const parts = m.split(&#x27;-&#x27;).map(Number);
+      const lastDay = new Date(parts[0], parts[1], 0).getDate(); // 그 달 말일 (날짜 숫자만 → 시간대 영향 없음)
+      document.getElementById(&#x27;s_start&#x27;).value = m + &#x27;-01&#x27;;
+      document.getElementById(&#x27;s_end&#x27;).value = m + &#x27;-&#x27; + (&#x27;0&#x27; + lastDay).slice(-2);
+      loadStats();
+    }
+    function clearRange() {
+      document.getElementById(&#x27;s_month&#x27;).value = &#x27;&#x27;;
+      document.getElementById(&#x27;s_start&#x27;).value = &#x27;&#x27;;
+      document.getElementById(&#x27;s_end&#x27;).value = &#x27;&#x27;;
+      loadStats();
+    }
+
+    function loadStats() {
+      const start = document.getElementById(&#x27;s_start&#x27;).value;
+      const end = document.getElementById(&#x27;s_end&#x27;).value;
+      document.getElementById(&#x27;statsResult&#x27;).innerHTML = &#x27;&lt;p class=&quot;muted&quot;&gt;집계 중...&lt;/p&gt;&#x27;;
+      google.script.run
+        .withSuccessHandler(showStats)
+        .withFailureHandler(function (err){
+          document.getElementById(&#x27;statsResult&#x27;).innerHTML = &#x27;&lt;p class=&quot;inactive&quot;&gt;집계 실패: &#x27; + err.message + &#x27;&lt;/p&gt;&#x27;;
+        })
+        .getStats(start, end);
+    }
+
+    function showStats(s) {
+      function distTable(title, obj) {
+        const keys = Object.keys(obj).sort();
+        if (keys.length === 0) return &#x27;&#x27;;
+        let h = &#x27;&lt;div class=&quot;box&quot;&gt;&lt;b&gt;&#x27; + title + &#x27;&lt;/b&gt;&lt;table&gt;&lt;tr&gt;&lt;th&gt;구분&lt;/th&gt;&lt;th&gt;봉사시간&lt;/th&gt;&lt;/tr&gt;&#x27;;
+        h += keys.map(function (k){ return &#x27;&lt;tr&gt;&lt;td&gt;&#x27; + esc(k) + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + obj[k] + &#x27;&lt;/td&gt;&lt;/tr&gt;&#x27;; }).join(&#x27;&#x27;);
+        return h + &#x27;&lt;/table&gt;&lt;/div&gt;&#x27;;
+      }
+      let html = &#x27;&lt;div class=&quot;stat-cards&quot;&gt;&#x27; +
+        card(s.totalHours, &#x27;총 봉사시간&#x27;) +
+        card(s.people, &#x27;참여 인원&#x27;) +
+        card(s.count, &#x27;활동 건수&#x27;) +
+        &#x27;&lt;/div&gt;&#x27;;
+      html += distTable(&#x27;월별&#x27;, s.byMonth);
+      html += distTable(&#x27;활동유형별&#x27;, s.byType);
+      html += distTable(&#x27;소속구분별&#x27;, s.byGroup);
+
+      // 상세 목록
+      html += &#x27;&lt;div class=&quot;box&quot;&gt;&lt;b&gt;상세 내역 (&#x27; + s.logs.length + &#x27;건)&lt;/b&gt;&lt;table&gt;&#x27; +
+        &#x27;&lt;tr&gt;&lt;th&gt;일자&lt;/th&gt;&lt;th&gt;유형&lt;/th&gt;&lt;th&gt;이름&lt;/th&gt;&lt;th&gt;소속&lt;/th&gt;&lt;th&gt;시간&lt;/th&gt;&lt;th&gt;장소&lt;/th&gt;&lt;th&gt;확인&lt;/th&gt;&lt;/tr&gt;&#x27;;
+      const sorted = s.logs.slice().sort(function(a,b){ return a.date&lt;b.date?1:-1; });
+      html += sorted.map(function (l) {
+        return &#x27;&lt;tr&gt;&lt;td&gt;&#x27; + esc(l.date) + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + esc(l.type) + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + esc(l.name) + &#x27;&lt;/td&gt;&#x27; +
+               &#x27;&lt;td&gt;&#x27; + esc(l.group) + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + l.hours + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + esc(l.place) + &#x27;&lt;/td&gt;&#x27; +
+               &#x27;&lt;td&gt;&#x27; + (l.confirmed === &#x27;확인&#x27; ? &#x27;✓&#x27; : &#x27;&lt;span class=&quot;muted&quot;&gt;-&lt;/span&gt;&#x27;) + &#x27;&lt;/td&gt;&lt;/tr&gt;&#x27;;
+      }).join(&#x27;&#x27;);
+      html += &#x27;&lt;/table&gt;&lt;/div&gt;&#x27;;
+      document.getElementById(&#x27;statsResult&#x27;).innerHTML = html;
+    }
+    function card(num, lbl){ return &#x27;&lt;div class=&quot;card&quot;&gt;&lt;div class=&quot;num&quot;&gt;&#x27; + num + &#x27;&lt;/div&gt;&lt;div class=&quot;lbl&quot;&gt;&#x27; + lbl + &#x27;&lt;/div&gt;&lt;/div&gt;&#x27;; }
+
+    // ================= 증명서 발급 =================
+    function fillCertMembers() {
+      const sel = document.getElementById(&#x27;cert_member&#x27;);
+      if (!sel) return;
+      sel.innerHTML = &#x27;&lt;option value=&quot;&quot;&gt;-- 봉사자 선택 --&lt;/option&gt;&#x27; +
+        OPTIONS.map(function (m){ return &#x27;&lt;option value=&quot;&#x27; + m.id + &#x27;&quot;&gt;&#x27; + esc(m.name) + &#x27; (&#x27; + m.id + &#x27;)&lt;/option&gt;&#x27;; }).join(&#x27;&#x27;);
+    }
+
+    function makeCert() {
+      const id = document.getElementById(&#x27;cert_member&#x27;).value;
+      if (!id) { alert(&#x27;봉사자를 선택하세요.&#x27;); return; }
+      const start = document.getElementById(&#x27;cert_start&#x27;).value;
+      const end = document.getElementById(&#x27;cert_end&#x27;).value;
+      document.getElementById(&#x27;certArea&#x27;).innerHTML = &#x27;&lt;p class=&quot;muted&quot;&gt;생성 중...&lt;/p&gt;&#x27;;
+      document.getElementById(&#x27;printBtn&#x27;).style.display = &#x27;none&#x27;;
+      google.script.run
+        .withSuccessHandler(showCert)
+        .withFailureHandler(function (err){
+          document.getElementById(&#x27;certArea&#x27;).innerHTML = &#x27;&lt;p class=&quot;inactive&quot;&gt;생성 실패: &#x27; + err.message + &#x27;&lt;/p&gt;&#x27;;
+        })
+        .getCertificate(id, start, end);
+    }
+
+    function showCert(c) {
+      const period = (c.start || c.end) ? (esc(c.start) + &#x27; ~ &#x27; + esc(c.end)) : &#x27;전체 기간&#x27;;
+      let rows = c.items.map(function (l) {
+        return &#x27;&lt;tr&gt;&lt;td&gt;&#x27; + esc(l.date) + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + esc(l.type) + &#x27;&lt;/td&gt;&#x27; +
+               &#x27;&lt;td&gt;&#x27; + l.hours + &#x27;&lt;/td&gt;&lt;td&gt;&#x27; + esc(l.place) + &#x27;&lt;/td&gt;&lt;/tr&gt;&#x27;;
+      }).join(&#x27;&#x27;);
+      if (!rows) rows = &#x27;&lt;tr&gt;&lt;td colspan=&quot;4&quot; class=&quot;muted&quot;&gt;해당 기간 활동 내역이 없습니다.&lt;/td&gt;&lt;/tr&gt;&#x27;;
+
+      const html =
+        &#x27;&lt;div class=&quot;cert&quot;&gt;&#x27; +
+          &#x27;&lt;h2 class=&quot;title&quot;&gt;봉사활동확인서&lt;/h2&gt;&#x27; +
+          &#x27;&lt;div class=&quot;field&quot;&gt;&lt;div class=&quot;k&quot;&gt;성명&lt;/div&gt;&lt;div class=&quot;v&quot;&gt;&#x27; + esc(c.name) + &#x27;&lt;/div&gt;&lt;/div&gt;&#x27; +
+          &#x27;&lt;div class=&quot;field&quot;&gt;&lt;div class=&quot;k&quot;&gt;소속구분&lt;/div&gt;&lt;div class=&quot;v&quot;&gt;&#x27; + esc(c.group) + &#x27;&lt;/div&gt;&lt;/div&gt;&#x27; +
+          &#x27;&lt;div class=&quot;field&quot;&gt;&lt;div class=&quot;k&quot;&gt;봉사자번호&lt;/div&gt;&lt;div class=&quot;v&quot;&gt;&#x27; + esc(c.id) + &#x27;&lt;/div&gt;&lt;/div&gt;&#x27; +
+          &#x27;&lt;div class=&quot;field&quot;&gt;&lt;div class=&quot;k&quot;&gt;봉사기간&lt;/div&gt;&lt;div class=&quot;v&quot;&gt;&#x27; + period + &#x27;&lt;/div&gt;&lt;/div&gt;&#x27; +
+          &#x27;&lt;div class=&quot;body&quot;&gt;위 사람은 위 기간 동안 총 &lt;span class=&quot;big&quot;&gt;&#x27; + c.total + &#x27;시간&lt;/span&gt;&#x27; +
+            &#x27; (총 &#x27; + c.count + &#x27;회)의 봉사활동을 성실히 수행하였음을 확인합니다.&lt;/div&gt;&#x27; +
+          &#x27;&lt;table&gt;&lt;tr&gt;&lt;th&gt;봉사일자&lt;/th&gt;&lt;th&gt;활동유형&lt;/th&gt;&lt;th&gt;시간&lt;/th&gt;&lt;th&gt;장소&lt;/th&gt;&lt;/tr&gt;&#x27; + rows + &#x27;&lt;/table&gt;&#x27; +
+          &#x27;&lt;div class=&quot;issue&quot;&gt;&#x27; + c.issueDate + &#x27;&lt;/div&gt;&#x27; +
+          &#x27;&lt;div class=&quot;org&quot;&gt;○ ○ ○ 기 관 장 &amp;nbsp; (직인)&lt;/div&gt;&#x27; +
+        &#x27;&lt;/div&gt;&#x27;;
+      document.getElementById(&#x27;certArea&#x27;).innerHTML = html;
+      document.getElementById(&#x27;printBtn&#x27;).style.display = &#x27;inline-block&#x27;;
+    }
+
+    function esc(t){ const d=document.createElement(&#x27;div&#x27;); d.textContent = t==null?&#x27;&#x27;:t; return d.innerHTML; }
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></div>
+
+<h2>3. 배포 & 두 화면 주소</h2>
+<div class="note">
+  배포 → 새 배포 → 웹 앱 → 실행: 나 / 액세스: 모든 사용자 → 배포 → 권한 허용<br><br>
+  나온 웹앱 주소가 <b>봉사자용</b>입니다.<br>
+  그 주소 <b>맨 뒤에 <kbd>?page=admin</kbd></b> 을 붙이면 <b>담당자용</b> 화면이 열립니다.<br>
+  <span class="hint">예: .../exec → 봉사자용 &nbsp;|&nbsp; .../exec?page=admin → 담당자용</span><br><br>
+  ⚠️ 코드 수정 후에는 <b>배포 관리 → 편집(연필) → 새 버전 → 배포</b>.
+</div>
+
+<script>
+function copyText(btn){
+  var t = btn.parentElement.querySelector('code').textContent;
+  function done(){ var o=btn.textContent; btn.textContent='복사됨 \u2713'; btn.classList.add('done');
+    setTimeout(function(){btn.textContent=o;btn.classList.remove('done');},1500); }
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,function(){fb(t,done);}); }
+  else { fb(t,done); }
+}
+function fb(t,done){ var a=document.createElement('textarea'); a.value=t; a.style.position='fixed'; a.style.left='-9999px';
+  document.body.appendChild(a); a.select(); try{document.execCommand('copy');done();}catch(e){alert('복사 실패');} document.body.removeChild(a); }
+</script>
+
+</body>
+</html>
